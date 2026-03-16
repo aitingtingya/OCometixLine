@@ -11,7 +11,7 @@
 ### 代码借鉴
 - **[opencode-status-hud](https://github.com/Two-Weeks-Team/opencode-status-hud)** by Two-Weeks-Team
   - 借鉴了其 OpenCode 插件架构和 HUD 显示机制
-  - **在此基础上使用 OpenCode + Kimi K2.5 进行改写和优化**
+  - **在此基础上使用 OpenCode + Kimi K2.5 进行改写**
   - 遵循 MIT 许可证
 
 ### 功能灵感
@@ -70,7 +70,7 @@ ocometixline --help
 ### 格式一：Nerd Font 模式（推荐）
 当终端支持 Nerd Font 时显示：
 ```
- ~/project |  main ✓ |  45%-92K/256K
+ ~/project |  main ✓ |  45%-92K/256K
 ```
 
 ### 格式二：Emoji 模式

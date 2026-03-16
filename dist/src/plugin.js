@@ -40,13 +40,11 @@ const ICONS = {
   nerd: {
     folder: '\uf114',
     git: '\uf418',
-    usage: '\uf472',
-    token: '\uf0f6'
+    token: '\uf472'
   },
   fallback: {
     folder: '\ud83d\udcc1',
     git: '\ud83d\udccd',
-    usage: '%',
     token: '\u26a1'
   }
 };
