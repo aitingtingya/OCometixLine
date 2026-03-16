@@ -1,0 +1,2 @@
+# OCometixLine
+一个模仿CCometixLine的opencode状态栏插件
