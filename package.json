@@ -2,6 +2,15 @@
   "name": "ocometixline",
   "version": "1.0.0",
   "description": "Custom OpenCode statusline with model context limits and icons",
+  "author": "1294178715@qq.com",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/aitingtingya/OCometixLine.git"
+  },
+  "bugs": {
+    "url": "https://github.com/aitingtingya/OCometixLine/issues"
+  },
+  "homepage": "https://github.com/aitingtingya/OCometixLine#readme",
   "type": "module",
   "main": "dist/src/index.js",
   "types": "dist/src/index.d.ts",
@@ -20,7 +29,6 @@
     }
   },
   "keywords": ["opencode", "plugin", "statusline"],
-  "author": "",
   "license": "MIT",
   "engines": {
     "node": ">=20"
