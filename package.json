@@ -1,0 +1,31 @@
+{
+  "name": "ocometixline",
+  "version": "1.0.0",
+  "description": "Custom OpenCode statusline with model context limits and icons",
+  "type": "module",
+  "main": "dist/src/index.js",
+  "types": "dist/src/index.d.ts",
+  "bin": {
+    "ocometixline": "bin/ocometixline.js"
+  },
+  "files": [
+    "dist",
+    "bin",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "import": "./dist/src/index.js"
+    }
+  },
+  "keywords": ["opencode", "plugin", "statusline"],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@opencode-ai/plugin": "^1.2.10"
+  }
+}
