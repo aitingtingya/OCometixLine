@@ -4,6 +4,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
+##这是一份Kimi-K2.5写的Readme
 ## Features
 
 - **🎯 智能字体检测** - 自动检测系统是否安装 Nerd Font，智能切换图标显示
