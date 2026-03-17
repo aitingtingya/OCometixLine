@@ -10,7 +10,7 @@
 - **🎯 智能字体检测** - 自动检测系统是否安装 Nerd Font，智能切换图标显示
 - **📊 Token 追踪** - 实时显示模型上下文使用量和限制（如 `45%-92K/256K`）
 - **🔀 Git 集成** - 显示当前分支和仓库状态（✓ 干净 / ● 有修改）
-- **🎨 双模式图标** - 支持 Nerd Font（  ⚡）和 Emoji（📁 📍 ⚡）两种显示风格
+- **🎨 双模式图标** - 支持 Nerd Font（  ⚡ ）和 Emoji（📁 📍 ⚡ 📊）两种显示风格
 - **⚡ 零配置** - 开箱即用，自动检测环境，缓存字体检测结果
 - **🔧 多模型支持** - 支持 Kimi K2.5、DeepSeek、GLM 等主流模型
 
@@ -75,7 +75,7 @@ rm ~/.ocometixline/font-cache.json
 ### 格式一：Nerd Font 模式
 当系统检测到安装 Nerd Font 时显示：
 ```
-📁 ~/.config/opencode/node_modules/OCometixLine | 📍 master ✓ | ⚡ 45%-92K/256K | 📊 519K
+ ~/.config/opencode/node_modules/OCometixLine |  master ✓ | ⚡ 45%-92K/256K |  519K
 ```
 
 ### 格式二：Emoji 模式
