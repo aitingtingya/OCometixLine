@@ -20,7 +20,7 @@ const MODEL_CONTEXT_LIMITS = {
 
 // 图标配置
 // context: 上下文栏目，计算 input + output（不含 reasoning）
-// consumption: Token消耗栏目，计算 input + output + reasoning
+// consumption: Token消耗栏目，计算累计的 input + output + reasoning
 const ICONS = {
   nerd: {
     folder: '\uf114',
@@ -38,6 +38,7 @@ const ICONS = {
 
 // 缓存文件路径
 const CACHE_FILE = path.join(homedir(), '.ocometixline', 'font-cache.json');
+const USAGE_FILE = path.join(homedir(), '.ocometixline', 'session-usage.json');
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24小时
 
 // 常见 Nerd Font 字体名称模式
@@ -100,6 +101,60 @@ function setCachedFontStatus(hasNerdFont) {
     writeFileSync(CACHE_FILE, JSON.stringify(cache, null, 2));
   } catch (e) {
     // 缓存失败静默处理
+  }
+}
+
+// 加载会话累计消耗
+function loadCumulativeConsumption(sessionID) {
+  try {
+    if (!existsSync(USAGE_FILE)) return 0;
+    
+    const data = JSON.parse(readFileSync(USAGE_FILE, 'utf8'));
+    const session = data.sessions?.[sessionID];
+    
+    if (session) {
+      return session.cumulativeConsumption || 0;
+    }
+    return 0;
+  } catch (e) {
+    return 0;
+  }
+}
+
+// 保存会话累计消耗
+function saveCumulativeConsumption(sessionID, consumption, messageID) {
+  try {
+    const cacheDir = path.dirname(USAGE_FILE);
+    if (!existsSync(cacheDir)) {
+      execSync(`mkdir -p "${cacheDir}"`, { windowsHide: true });
+    }
+    
+    let data = { sessions: {} };
+    if (existsSync(USAGE_FILE)) {
+      data = JSON.parse(readFileSync(USAGE_FILE, 'utf8'));
+    }
+    
+    data.sessions[sessionID] = {
+      cumulativeConsumption: consumption,
+      lastMessageID: messageID,
+      lastUpdated: Date.now()
+    };
+    
+    writeFileSync(USAGE_FILE, JSON.stringify(data, null, 2));
+  } catch (e) {
+    // 保存失败静默处理
+  }
+}
+
+// 获取上次处理的消息ID（用于防重复）
+function getLastMessageID(sessionID) {
+  try {
+    if (!existsSync(USAGE_FILE)) return null;
+    
+    const data = JSON.parse(readFileSync(USAGE_FILE, 'utf8'));
+    return data.sessions?.[sessionID]?.lastMessageID || null;
+  } catch (e) {
+    return null;
   }
 }
 
@@ -250,7 +305,7 @@ function resolveModelContextLimit(modelID) {
   return 90000;
 }
 
-function buildStatusLine(ctx, message) {
+function buildStatusLine(ctx, message, cumulativeConsumption) {
   const icons = hasNerdFont() ? ICONS.nerd : ICONS.fallback;
   const directory = formatDirectory(ctx.directory || '');
   const gitInfo = getGitInfo(ctx.directory || '');
@@ -262,21 +317,16 @@ function buildStatusLine(ctx, message) {
   
   const contextLimit = resolveModelContextLimit(message.modelID || '');
   
-  // 上下文：input + output（不含 reasoning，因为 reasoning 不会进入下一轮上下文）
+  // 上下文：本条消息的 input + output（不含 reasoning）
   const contextUsed = asFiniteNumber(message.tokens?.input || 0) + 
                      asFiniteNumber(message.tokens?.output || 0);
   const contextPercent = Math.min(100, Math.round((contextUsed / contextLimit) * 100));
   
-  // Token消耗：input + output + reasoning（总用量）
-  const totalConsumption = asFiniteNumber(message.tokens?.input || 0) + 
-                          asFiniteNumber(message.tokens?.output || 0) + 
-                          asFiniteNumber(message.tokens?.reasoning || 0);
-  
   // 上下文显示：闪电图标，格式为 55%-140K/256K
   const contextDisplay = `${icons.context} ${contextPercent}%-${formatCompactTokens(contextUsed)}/${formatCompactTokens(contextLimit)}`;
   
-  // Token消耗显示：柱状图图标，无百分比，仅显示总量
-  const consumptionDisplay = `${icons.consumption} ${formatCompactTokens(totalConsumption)}`;
+  // Token消耗显示：柱状图图标，显示会话累计值
+  const consumptionDisplay = `${icons.consumption} ${formatCompactTokens(cumulativeConsumption)}`;
   
   const parts = [
     `${icons.folder} ${directory}`,
@@ -303,14 +353,6 @@ function toSessionKey(sessionID) {
   return sessionID ?? '__global__';
 }
 
-function resolveContextUsedTokens(tokens) {
-  // 上下文：只计算 input + output（不含 reasoning）
-  // reasoning 是模型内部思考过程，不会进入下一轮对话的上下文
-  const contextUsed = asFiniteNumber(tokens?.input ?? 0) + 
-                      asFiniteNumber(tokens?.output ?? 0);
-  return Math.max(0, Math.trunc(contextUsed));
-}
-
 export function createOCometixLineHooks(ctx) {
   const sessionRuntimes = new Map();
   const MAX_SESSION_ENTRIES = 50;
@@ -332,7 +374,8 @@ export function createOCometixLineHooks(ctx) {
         seenAssistantMessages: new Set(),
         usageByMessageID: new Map(),
         outputAugmentedMessages: new Set(),
-        lastCompletedUsage: null
+        lastCompletedUsage: null,
+        cumulativeConsumption: loadCumulativeConsumption(sessionKey)
       };
       sessionRuntimes.set(sessionKey, runtime);
       pruneMap(sessionRuntimes);
@@ -355,19 +398,29 @@ export function createOCometixLineHooks(ctx) {
         const sessionKey = toSessionKey(message.sessionID);
         const runtime = getOrCreateRuntime(sessionKey);
         
-        // 计算 contextUsedTokens（只计算 input + output）
-        const contextUsedTokens = resolveContextUsedTokens(message.tokens);
+        // 本条消息的 token 用量
+        const messageInput = asFiniteNumber(message.tokens?.input ?? 0);
+        const messageOutput = asFiniteNumber(message.tokens?.output ?? 0);
+        const messageReasoning = asFiniteNumber(message.tokens?.reasoning ?? 0);
+        
+        // 上下文：只计算 input + output（用于显示本条）
+        const contextUsedTokens = messageInput + messageOutput;
+        
+        // Token消耗：计算本条的总消耗（input + output + reasoning）
+        const messageConsumption = messageInput + messageOutput + messageReasoning;
+        
         const contextLimitTokens = Math.max(resolveModelContextLimit(message.modelID), contextUsedTokens);
         
-        // 存储到 usageByMessageID（不检查 seenAssistantMessages，每次更新都可能包含新数据）
+        // 存储到 usageByMessageID
         runtime.usageByMessageID.set(message.id, {
           modelID: message.modelID,
           contextUsedTokens,
           contextLimitTokens,
+          messageConsumption,
           tokens: {
-            input: asFiniteNumber(message.tokens?.input ?? 0),
-            output: asFiniteNumber(message.tokens?.output ?? 0),
-            reasoning: asFiniteNumber(message.tokens?.reasoning ?? 0)
+            input: messageInput,
+            output: messageOutput,
+            reasoning: messageReasoning
           }
         });
         
@@ -376,11 +429,20 @@ export function createOCometixLineHooks(ctx) {
           return;
         }
         
-        // 检查是否已经处理过此完成消息
+        // 检查是否已经处理过此完成消息（防重复）
         if (runtime.seenAssistantMessages.has(message.id)) {
           return;
         }
         runtime.seenAssistantMessages.add(message.id);
+        
+        // 检查是否已经累加过（从磁盘读取 lastMessageID）
+        const lastProcessedID = getLastMessageID(sessionKey);
+        if (lastProcessedID !== message.id) {
+          // 累加到会话累计值
+          runtime.cumulativeConsumption += messageConsumption;
+          // 保存到磁盘
+          saveCumulativeConsumption(sessionKey, runtime.cumulativeConsumption, message.id);
+        }
         
         // 获取刚存储的数据
         const completedUsage = runtime.usageByMessageID.get(message.id);
@@ -429,11 +491,11 @@ export function createOCometixLineHooks(ctx) {
           return;
         }
         
-        // 构建状态栏
+        // 构建状态栏，传入累计消耗
         const statusLine = buildStatusLine(ctx, {
           modelID: usage.modelID,
           tokens: usage.tokens
-        });
+        }, runtime.cumulativeConsumption);
         
         // 替换或追加状态栏（如果已存在则替换，避免重复）
         output.text = appendOrReplaceStatusLine(output.text, statusLine);
