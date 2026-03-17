@@ -108,25 +108,19 @@ function setCachedFontStatus(hasNerdFont) {
   }
 }
 
-// 加载会话累计消耗
-function loadCumulativeConsumption(sessionID) {
+// 加载会话数据
+function loadSessionData(sessionID) {
   try {
-    if (!existsSync(USAGE_FILE)) return 0;
-    
+    if (!existsSync(USAGE_FILE)) return null;
     const data = JSON.parse(readFileSync(USAGE_FILE, 'utf8'));
-    const session = data.sessions?.[sessionID];
-    
-    if (session) {
-      return session.cumulativeConsumption || 0;
-    }
-    return 0;
+    return data.sessions?.[sessionID] || null;
   } catch (e) {
-    return 0;
+    return null;
   }
 }
 
-// 保存会话累计消耗
-function saveCumulativeConsumption(sessionID, consumption, messageID) {
+// 保存会话数据
+function saveSessionData(sessionID, consumption, messageID, tokens, modelID) {
   try {
     const cacheDir = path.dirname(USAGE_FILE);
     if (!existsSync(cacheDir)) {
@@ -141,13 +135,13 @@ function saveCumulativeConsumption(sessionID, consumption, messageID) {
     data.sessions[sessionID] = {
       cumulativeConsumption: consumption,
       lastMessageID: messageID,
+      lastTokens: tokens,
+      lastModelID: modelID,
       lastUpdated: Date.now()
     };
     
     writeFileSync(USAGE_FILE, JSON.stringify(data, null, 2));
-  } catch (e) {
-    // 保存失败静默处理
-  }
+  } catch (e) {}
 }
 
 // 获取上次处理的消息ID（用于防重复）
@@ -374,12 +368,18 @@ export function createOCometixLineHooks(ctx) {
   function getOrCreateRuntime(sessionKey) {
     let runtime = sessionRuntimes.get(sessionKey);
     if (!runtime) {
+      const sessionData = loadSessionData(sessionKey);
+      
       runtime = { 
         seenAssistantMessages: new Set(),
         usageByMessageID: new Map(),
         outputAugmentedMessages: new Set(),
-        lastCompletedUsage: null,
-        cumulativeConsumption: loadCumulativeConsumption(sessionKey)
+        lastCompletedUsage: sessionData?.lastTokens ? {
+          modelID: sessionData.lastModelID,
+          tokens: sessionData.lastTokens
+        } : null,
+        cumulativeConsumption: sessionData?.cumulativeConsumption || 0,
+        sessionModelID: sessionData?.lastModelID || null
       };
       sessionRuntimes.set(sessionKey, runtime);
       pruneMap(sessionRuntimes);
@@ -408,42 +408,56 @@ export function createOCometixLineHooks(ctx) {
         
         const contextUsedTokens = messageInput + messageOutput;
         const messageConsumption = messageInput + messageOutput + messageReasoning;
+        const contextLimitTokens = Math.max(resolveModelContextLimit(message.modelID), contextUsedTokens);
         
+        // 立即存储（不等待完成）
+        if (message.modelID) {
+          runtime.usageByMessageID.set(message.id, {
+            modelID: message.modelID,
+            contextUsedTokens,
+            contextLimitTokens,
+            messageConsumption,
+            tokens: {
+              input: messageInput,
+              output: messageOutput,
+              reasoning: messageReasoning
+            }
+          });
+        }
+        
+        // 检查消息是否完成
         const isCompleted = typeof message.time?.completed === 'number';
-        const hasTokens = contextUsedTokens > 0;
-        
-        if (!isCompleted || !hasTokens) {
+        if (!isCompleted) {
           return;
         }
         
-        const contextLimitTokens = Math.max(resolveModelContextLimit(message.modelID), contextUsedTokens);
-        
-        runtime.usageByMessageID.set(message.id, {
-          modelID: message.modelID,
-          contextUsedTokens,
-          contextLimitTokens,
-          messageConsumption,
-          tokens: {
-            input: messageInput,
-            output: messageOutput,
-            reasoning: messageReasoning
-          }
-        });
-        
+        // 检查是否已处理
         if (runtime.seenAssistantMessages.has(message.id)) {
           return;
         }
         runtime.seenAssistantMessages.add(message.id);
         
+        // 累加 token
         const lastProcessedID = getLastMessageID(sessionKey);
         if (lastProcessedID !== message.id) {
           runtime.cumulativeConsumption += messageConsumption;
-          saveCumulativeConsumption(sessionKey, runtime.cumulativeConsumption, message.id);
         }
         
+        // 更新 lastCompletedUsage 并持久化
         const completedUsage = runtime.usageByMessageID.get(message.id);
-        if (completedUsage && completedUsage.contextUsedTokens > 0) {
+        if (completedUsage && contextUsedTokens > 0) {
           runtime.lastCompletedUsage = completedUsage;
+          saveSessionData(sessionKey, runtime.cumulativeConsumption, message.id, completedUsage.tokens, completedUsage.modelID);
+        }
+      } catch (e) {}
+    },
+    
+    "chat.message": async (input) => {
+      try {
+        if (input.model?.modelID) {
+          const sessionKey = toSessionKey(input.sessionID);
+          const runtime = getOrCreateRuntime(sessionKey);
+          runtime.sessionModelID = input.model.modelID;
         }
       } catch (e) {}
     },
@@ -459,7 +473,7 @@ export function createOCometixLineHooks(ctx) {
         }
         runtime.outputAugmentedMessages.add(messageID);
         
-        const MAX_WAIT_MS = 3000;
+        const MAX_WAIT_MS = 0;
         const POLL_INTERVAL_MS = 100;
         const maxAttempts = MAX_WAIT_MS / POLL_INTERVAL_MS;
         let usage = null;
@@ -476,13 +490,12 @@ export function createOCometixLineHooks(ctx) {
           usage = runtime.lastCompletedUsage;
         }
         
-        if (!usage || usage.contextUsedTokens === 0) {
-          return;
-        }
+        const modelID = usage?.modelID || runtime.sessionModelID || '';
+        const tokens = usage?.tokens || { input: 0, output: 0, reasoning: 0 };
         
         const statusLine = buildStatusLine(ctx, {
-          modelID: usage.modelID,
-          tokens: usage.tokens
+          modelID: modelID,
+          tokens: tokens
         }, runtime.cumulativeConsumption);
         
         output.text = appendOrReplaceStatusLine(output.text, statusLine);
