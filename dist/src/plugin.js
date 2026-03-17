@@ -473,23 +473,7 @@ export function createOCometixLineHooks(ctx) {
         }
         runtime.outputAugmentedMessages.add(messageID);
         
-        const MAX_WAIT_MS = 0;
-        const POLL_INTERVAL_MS = 100;
-        const maxAttempts = MAX_WAIT_MS / POLL_INTERVAL_MS;
-        let usage = null;
-        
-        for (let attempt = 0; attempt < maxAttempts; attempt++) {
-          usage = runtime.usageByMessageID.get(messageID);
-          if (usage && usage.contextUsedTokens > 0) {
-            break;
-          }
-          await sleep(POLL_INTERVAL_MS);
-        }
-        
-        if (!usage || usage.contextUsedTokens === 0) {
-          usage = runtime.lastCompletedUsage;
-        }
-        
+        const usage = runtime.lastCompletedUsage;
         const modelID = usage?.modelID || runtime.sessionModelID || '';
         const tokens = usage?.tokens || { input: 0, output: 0, reasoning: 0 };
         

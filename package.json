@@ -13,7 +13,6 @@
   "homepage": "https://github.com/aitingtingya/OCometixLine#readme",
   "type": "module",
   "main": "dist/src/index.js",
-  "types": "dist/src/index.d.ts",
   "bin": {
     "ocometixline": "bin/ocometixline.js"
   },
@@ -24,7 +23,6 @@
   ],
   "exports": {
     ".": {
-      "types": "./dist/src/index.d.ts",
       "import": "./dist/src/index.js"
     }
   },
