@@ -19,16 +19,20 @@ const MODEL_CONTEXT_LIMITS = {
 };
 
 // 图标配置
+// context: 上下文栏目，计算 input + output（不含 reasoning）
+// consumption: Token消耗栏目，计算 input + output + reasoning
 const ICONS = {
   nerd: {
     folder: '\uf114',
     git: '\uf418',
-    token: '\uf472'
+    context: '\uf0e7',
+    consumption: '\uf472'
   },
   fallback: {
     folder: '\ud83d\udcc1',
     git: '\ud83d\udccd',
-    token: '\u26a1'
+    context: '\u26a1',
+    consumption: '\ud83d\udcca'
   }
 };
 
@@ -252,30 +256,40 @@ function buildStatusLine(ctx, message) {
   const gitInfo = getGitInfo(ctx.directory || '');
   
   // Git 显示：分支 + 状态（✓/●）
-  const gitDisplay = gitInfo 
+  const gitDisplay = gitInfo
     ? `${icons.git} ${gitInfo.branch}${gitInfo.status ? ' ' + gitInfo.status : ''}`
     : '';
   
   const contextLimit = resolveModelContextLimit(message.modelID || '');
+  
+  // 上下文：input + output（不含 reasoning，因为 reasoning 不会进入下一轮上下文）
   const contextUsed = asFiniteNumber(message.tokens?.input || 0) + 
-                     asFiniteNumber(message.tokens?.output || 0) + 
-                     asFiniteNumber(message.tokens?.reasoning || 0);
+                     asFiniteNumber(message.tokens?.output || 0);
   const contextPercent = Math.min(100, Math.round((contextUsed / contextLimit) * 100));
   
-  // 合并 Token 显示：使用饼堆图标，格式为 55%-140K/256K
-  const tokenDisplay = `${icons.token} ${contextPercent}%-${formatCompactTokens(contextUsed)}/${formatCompactTokens(contextLimit)}`;
+  // Token消耗：input + output + reasoning（总用量）
+  const totalConsumption = asFiniteNumber(message.tokens?.input || 0) + 
+                          asFiniteNumber(message.tokens?.output || 0) + 
+                          asFiniteNumber(message.tokens?.reasoning || 0);
+  
+  // 上下文显示：闪电图标，格式为 55%-140K/256K
+  const contextDisplay = `${icons.context} ${contextPercent}%-${formatCompactTokens(contextUsed)}/${formatCompactTokens(contextLimit)}`;
+  
+  // Token消耗显示：柱状图图标，无百分比，仅显示总量
+  const consumptionDisplay = `${icons.consumption} ${formatCompactTokens(totalConsumption)}`;
   
   const parts = [
     `${icons.folder} ${directory}`,
     gitDisplay,
-    tokenDisplay
+    contextDisplay,
+    consumptionDisplay
   ].filter(Boolean);
-  
+
   return parts.join(' | ');
 }
 
 // 匹配状态栏的正则表达式（匹配新格式：... |  58%-149K/256K）
-const STATUS_LINE_RE = /\n\n> .+\|.+\d+%-\d+[KM]?\/\d+[KM]?$/;
+const STATUS_LINE_RE = /\n\n> .+\|.+\d+%-\d+[KM]?\/\d+[KM]?\|.+\d+[KM]?$/;
 
 function appendOrReplaceStatusLine(text, statusLine) {
   // 如果已经存在状态栏，替换它
