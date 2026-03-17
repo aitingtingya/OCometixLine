@@ -409,9 +409,19 @@ export function createOCometixLineHooks(ctx) {
         // Token消耗：计算本条的总消耗（input + output + reasoning）
         const messageConsumption = messageInput + messageOutput + messageReasoning;
         
+        // 【调整时序】先检查是否完成且 token 已计算
+        if (typeof message.time?.completed !== 'number') {
+          return;  // 未完成，不存储
+        }
+        
+        // 【调整时序】检查 token 是否已计算（不为0）
+        if (contextUsedTokens === 0) {
+          return;  // token 未计算，不存储
+        }
+        
         const contextLimitTokens = Math.max(resolveModelContextLimit(message.modelID), contextUsedTokens);
         
-        // 存储到 usageByMessageID
+        // 【调整时序】此时才存储（确保数据正确）
         runtime.usageByMessageID.set(message.id, {
           modelID: message.modelID,
           contextUsedTokens,
@@ -423,11 +433,6 @@ export function createOCometixLineHooks(ctx) {
             reasoning: messageReasoning
           }
         });
-        
-        // 检查消息是否已完成
-        if (typeof message.time?.completed !== 'number') {
-          return;
-        }
         
         // 检查是否已经处理过此完成消息（防重复）
         if (runtime.seenAssistantMessages.has(message.id)) {
@@ -444,7 +449,7 @@ export function createOCometixLineHooks(ctx) {
           saveCumulativeConsumption(sessionKey, runtime.cumulativeConsumption, message.id);
         }
         
-        // 获取刚存储的数据
+        // 【调整时序】设置 lastCompletedUsage（此时一定正确）
         const completedUsage = runtime.usageByMessageID.get(message.id);
         if (completedUsage && completedUsage.contextUsedTokens > 0) {
           runtime.lastCompletedUsage = completedUsage;
@@ -465,33 +470,15 @@ export function createOCometixLineHooks(ctx) {
         }
         runtime.outputAugmentedMessages.add(input.messageID);
         
-        // 从 usageByMessageID 获取数据
-        const currentUsage = runtime.usageByMessageID.get(input.messageID) ?? null;
-        let usage = null;
+        // 【调整时序】从 usageByMessageID 获取数据
+        const usage = runtime.usageByMessageID.get(input.messageID);
         
-        if (currentUsage !== null) {
-          if (currentUsage.contextUsedTokens > 0) {
-            // 有有效数据，直接使用
-            usage = currentUsage;
-          } else if (runtime.lastCompletedUsage !== null) {
-            // 当前数据为 0，使用上一次的有效数据作为备选
-            usage = {
-              ...currentUsage,
-              contextUsedTokens: runtime.lastCompletedUsage.contextUsedTokens,
-              contextLimitTokens: runtime.lastCompletedUsage.contextLimitTokens,
-              tokens: runtime.lastCompletedUsage.tokens
-            };
-          } else {
-            // 没有备选数据，使用当前数据
-            usage = currentUsage;
-          }
-        }
-        
-        if (usage === null) {
+        // 【调整时序】如果未存储或仍为0，不显示（等待下次更新）
+        if (!usage || usage.contextUsedTokens === 0) {
           return;
         }
         
-        // 构建状态栏，传入累计消耗
+        // 【调整时序】直接使用存储的数据（不再使用 lastCompletedUsage 备选）
         const statusLine = buildStatusLine(ctx, {
           modelID: usage.modelID,
           tokens: usage.tokens
