@@ -288,16 +288,15 @@ function buildStatusLine(ctx, message) {
   return parts.join(' | ');
 }
 
-// 匹配状态栏的正则表达式（匹配新格式：... |  58%-149K/256K）
-const STATUS_LINE_RE = /\n\n> .+\|.+\d+%-\d+[KM]?\/\d+[KM]?\|.+\d+[KM]?$/;
+// 匹配末尾所有连续的引用块状态栏
+// [^\n]+ 匹配所有非换行字符，包括 emoji 和 Nerd Font 图标
+const STATUS_LINE_RE = /(\n\n> [^\n]+)+$/;
 
 function appendOrReplaceStatusLine(text, statusLine) {
-  // 如果已经存在状态栏，替换它
-  if (STATUS_LINE_RE.test(text)) {
-    return text.replace(STATUS_LINE_RE, `\n\n> ${statusLine}`);
-  }
-  // 否则追加新的状态栏
-  return `${text.trim()}\n\n> ${statusLine}`;
+  // 移除末尾所有已有的状态栏引用块
+  const cleanText = text.replace(STATUS_LINE_RE, '').trim();
+  // 追加新的状态栏
+  return `${cleanText}\n\n> ${statusLine}`;
 }
 
 function toSessionKey(sessionID) {
@@ -305,14 +304,11 @@ function toSessionKey(sessionID) {
 }
 
 function resolveContextUsedTokens(tokens) {
-  const total = asFiniteNumber(tokens?.total ?? 0);
-  if (total > 0) {
-    return Math.max(0, Math.trunc(total));
-  }
-  const fallback = asFiniteNumber(tokens?.input ?? 0) + 
-                  asFiniteNumber(tokens?.output ?? 0) + 
-                  asFiniteNumber(tokens?.reasoning ?? 0);
-  return Math.max(0, Math.trunc(fallback));
+  // 上下文：只计算 input + output（不含 reasoning）
+  // reasoning 是模型内部思考过程，不会进入下一轮对话的上下文
+  const contextUsed = asFiniteNumber(tokens?.input ?? 0) + 
+                      asFiniteNumber(tokens?.output ?? 0);
+  return Math.max(0, Math.trunc(contextUsed));
 }
 
 export function createOCometixLineHooks(ctx) {
@@ -359,7 +355,7 @@ export function createOCometixLineHooks(ctx) {
         const sessionKey = toSessionKey(message.sessionID);
         const runtime = getOrCreateRuntime(sessionKey);
         
-        // 计算 contextUsedTokens
+        // 计算 contextUsedTokens（只计算 input + output）
         const contextUsedTokens = resolveContextUsedTokens(message.tokens);
         const contextLimitTokens = Math.max(resolveModelContextLimit(message.modelID), contextUsedTokens);
         
