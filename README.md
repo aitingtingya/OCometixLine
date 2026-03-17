@@ -1,32 +1,18 @@
 # OCometixLine
 
-> OpenCode 状态栏插件 - 实时显示模型、Git 状态、上下文信息和费用追踪
+> OpenCode 状态栏插件 - 实时显示模型上下文限制、Git 状态和 Token 使用量
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
-## Credits & Acknowledgments
-
-本项目借鉴并参考了以下开源项目：
-
-### 代码借鉴
-- **[opencode-status-hud](https://github.com/Two-Weeks-Team/opencode-status-hud)** by Two-Weeks-Team
-  - 借鉴了其 OpenCode 插件架构和 HUD 显示机制
-  - **在此基础上使用 OpenCode + Kimi K2.5 进行改写**
-  - 遵循 MIT 许可证
-
-### 功能灵感
-- **[CCometixLine](https://github.com/Haleclipse/CCometixLine)** by Haleclipse
-  - 功能设计参考了其状态栏显示逻辑
-  - 包括 Git 集成、模型显示、上下文追踪等功能的灵感来源
-  - 遵循 MIT 许可证
-
+## 这是一份Kimi-K2.5写的Readme
 ## Features
 
-- **实时上下文追踪** - 显示当前目录、Git 状态和 Token 使用量
-- **Git 集成** - 显示当前分支、仓库状态（干净/有修改）
-- **图标支持** - 使用 emoji 和 Nerd Font 图标提供直观的视觉指示
-- **多模型支持** - 支持 Kimi K2.5 及其他主流模型
-- **零配置** - 开箱即用，自动检测环境
+- **🎯 智能字体检测** - 自动检测系统是否安装 Nerd Font，智能切换图标显示
+- **📊 Token 追踪** - 实时显示模型上下文使用量和限制（如 `45%-92K/256K`）
+- **🔀 Git 集成** - 显示当前分支和仓库状态（✓ 干净 / ● 有修改）
+- **🎨 双模式图标** - 支持 Nerd Font（  ⚡）和 Emoji（📁 📍 ⚡）两种显示风格
+- **⚡ 零配置** - 开箱即用，自动检测环境，缓存字体检测结果
+- **🔧 多模型支持** - 支持 Kimi K2.5、DeepSeek、GLM 等主流模型
 
 ## Install
 
@@ -38,80 +24,95 @@ npm install -g ocometixline
 
 ### 作为 OpenCode 插件
 
-在你的 OpenCode 配置中启用此插件：
+使用 CLI 安装插件：
 
 ```bash
-opencode --install-plugin ocometixline
+# 安装到 OpenCode
+ocometixline install
+
+# 从 OpenCode 卸载
+ocometixline uninstall
 ```
 
-### CLI 模式
+然后在你的 `opencode.json` 配置中启用：
 
-```bash
-# 显示当前状态
-ocometixline status
-
-# 查看帮助
-ocometixline --help
+```json
+{
+  "plugins": ["OCometixLine"]
+}
 ```
 
 ## Configuration
 
-插件会自动检测以下信息：
-- 当前 Git 仓库和分支
-- 使用的 AI 模型
-- Token 使用量
+### 环境变量
 
-无需额外配置即可使用。
+| 变量名 | 值 | 说明 |
+|--------|-----|------|
+| `NERD_FONT` | `1` | 强制使用 Nerd Font 图标 |
+| `NERD_FONT` | `0` | 强制使用 Emoji 图标 |
+
+```bash
+# 强制使用 Nerd Font
+export NERD_FONT=1
+
+# 强制使用 Emoji
+export NERD_FONT=0
+```
+
+### 缓存机制
+
+插件会缓存字体检测结果到 `~/.ocometixline/font-cache.json`，24 小时内无需重复检测。
+
+如需重新检测：
+```bash
+rm ~/.ocometixline/font-cache.json
+```
 
 ## HUD 显示格式
 
-根据终端是否支持 [Nerd Font](https://www.nerdfonts.com/)，插件会自动选择显示格式：
-
-### 格式一：Nerd Font 模式（推荐）
-当终端支持 Nerd Font 时显示：
+### 格式一：Nerd Font 模式
+当系统检测到安装 Nerd Font 时显示：
 ```
- ~/project |  main ✓ |  45%-92K/256K
+ ~/.config/opencode/node_modules/OCometixLine |  master ✓ | ⚡ 45%-92K/256K
 ```
 
 ### 格式二：Emoji 模式
-当终端不支持 Nerd Font 时自动回退：
+未检测到 Nerd Font 时自动回退：
 ```
-📁 ~/project | 📍 main ✓ | ⚡ 45%-92K/256K
+📁 ~/.config/opencode/node_modules/OCometixLine | 📍 master ✓ | ⚡ 45%-92K/256K
 ```
 
 ### 显示内容说明
-- **📁 目录** - 当前工作目录（自动简化为 `~` 或文件夹名）
-- **📍 Git 状态** - 分支名称和状态指示符（✓ 干净 / ● 有修改）
-- **⚡ Token 使用** - 上下文使用百分比和具体数值（如 `45%-92K/256K`）
+- **📁/ 目录** - 当前工作目录（自动简化为 `~`）
+- **📍/ Git** - 分支名称 + 状态指示符（✓ 干净 / ● 有修改）
+- **⚡ Token** - 上下文使用百分比、当前使用量/限制（如 `45%-92K/256K`）
 
-### 强制切换显示模式
-可以通过环境变量强制指定：
-```bash
-# 强制使用 Nerd Font 格式
-export NERD_FONT=1
+## Supported Models
 
-# 强制使用 Emoji 格式
-export NERD_FONT=0
-```
+| 模型 | 上下文限制 |
+|------|-----------|
+| Kimi K2.5 / K2 | 256K |
+| MiniMax 2.5 | 256K |
+| GLM-5 | 200K |
+| DeepSeek V3 / V3.2 | 128K |
+| 默认 | 90K |
 
 ## Requirements
 
 - Node.js >= 20
 - OpenCode CLI
-- Git (可选，用于 Git 状态显示)
+- Git（可选，用于 Git 状态显示）
+- Nerd Font（可选，用于图标显示）
 
 ## Development
 
 ```bash
 # 克隆仓库
-git clone <your-repo-url>
-cd ocometixline
+git clone https://github.com/aitingtingya/OCometixLine.git
+cd OCometixLine
 
 # 安装依赖
 npm install
-
-# 构建
-npm run build
 
 # 本地测试
 npm link
@@ -123,6 +124,10 @@ MIT License - 详见 [LICENSE](LICENSE) 文件
 
 ## Acknowledgments
 
-感谢以下项目的贡献者们：
-- [Two-Weeks-Team](https://github.com/Two-Weeks-Team) 提供的 opencode-status-hud 代码基础
-- [Haleclipse](https://github.com/Haleclipse) 提供的 CCometixLine 功能灵感
+本项目借鉴并参考了以下开源项目：
+
+- **[opencode-status-hud](https://github.com/Two-Weeks-Team/opencode-status-hud)** by Two-Weeks-Team
+  - OpenCode 插件架构和 HUD 显示机制
+  
+- **[CCometixLine](https://github.com/Haleclipse/CCometixLine)** by Haleclipse
+  - 状态栏功能设计灵感

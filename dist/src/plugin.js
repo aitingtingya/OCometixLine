@@ -1,25 +1,8 @@
 // OCometixLine - OpenCode Custom Statusline Plugin
 import { execSync } from 'child_process';
-import { appendFileSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync } from 'fs';
 import { homedir } from 'os';
 import path from 'path';
-
-// 日志文件路径
-const LOG_FILE = path.join(homedir(), 'ocometixline-debug.log');
-
-// 日志函数
-function log(message) {
-  const timestamp = new Date().toISOString();
-  const logMessage = `[${timestamp}] ${message}\n`;
-  try {
-    appendFileSync(LOG_FILE, logMessage);
-  } catch (e) {
-    // 如果日志写入失败，静默处理
-  }
-}
-
-// 记录插件文件被加载
-log('Plugin file loaded');
 
 // 模型上下文限制（不区分大小写）
 const MODEL_CONTEXT_LIMITS = {
@@ -49,49 +32,147 @@ const ICONS = {
   }
 };
 
+// 缓存文件路径
+const CACHE_FILE = path.join(homedir(), '.ocometixline', 'font-cache.json');
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24小时
+
+// 常见 Nerd Font 字体名称模式
+const NERD_FONT_PATTERNS = [
+  'Nerd Font',
+  'NF',
+  'Caskaydia',
+  'JetBrainsMono',
+  'Fira Code',
+  'FiraCode',
+  'Hack',
+  'Meslo',
+  'Source Code Pro',
+  'Ubuntu Mono',
+  'DejaVu Sans Mono',
+  'Inconsolata',
+  'Monoid',
+  'Terminus',
+  'Droid Sans Mono',
+  'Roboto Mono',
+  'Noto Sans Mono',
+  'Liberation Mono',
+  'Fantasque Sans Mono',
+  'Iosevka'
+];
+
+// 获取缓存的字体检测结果
+function getCachedFontStatus() {
+  try {
+    if (!existsSync(CACHE_FILE)) return null;
+    
+    const cache = JSON.parse(readFileSync(CACHE_FILE, 'utf8'));
+    const now = Date.now();
+    
+    // 检查缓存是否过期
+    if (now - cache.timestamp > CACHE_TTL_MS) {
+      return null;
+    }
+    
+    return cache.hasNerdFont;
+  } catch (e) {
+    return null;
+  }
+}
+
+// 保存字体检测结果到缓存
+function setCachedFontStatus(hasNerdFont) {
+  try {
+    const cacheDir = path.dirname(CACHE_FILE);
+    if (!existsSync(cacheDir)) {
+      execSync(`mkdir -p "${cacheDir}"`, { windowsHide: true });
+    }
+    
+    const cache = {
+      hasNerdFont,
+      timestamp: Date.now(),
+      platform: process.platform
+    };
+    
+    writeFileSync(CACHE_FILE, JSON.stringify(cache, null, 2));
+  } catch (e) {
+    // 缓存失败静默处理
+  }
+}
+
+// 检测 Windows 系统是否安装了 Nerd Font
+function detectNerdFontWindows() {
+  try {
+    // 使用 PowerShell 查询注册表中的字体
+    const command = `powershell.exe -Command "Get-ItemProperty 'HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Fonts' | Get-Member -MemberType NoteProperty | Select-Object -ExpandProperty Name"`;
+    
+    const output = execSync(command, { 
+      encoding: 'utf8', 
+      timeout: 5000,
+      windowsHide: true 
+    });
+    
+    // 检查是否包含 Nerd Font 模式
+    const hasNerdFont = NERD_FONT_PATTERNS.some(pattern => 
+      output.toLowerCase().includes(pattern.toLowerCase())
+    );
+    
+    return hasNerdFont;
+  } catch (e) {
+    return false;
+  }
+}
+
+// 检测 macOS/Linux 系统是否安装了 Nerd Font
+function detectNerdFontUnix() {
+  try {
+    // 使用 fc-list 命令列出所有字体
+    const output = execSync('fc-list : family', { 
+      encoding: 'utf8', 
+      timeout: 5000 
+    });
+    
+    // 检查是否包含 Nerd Font 模式
+    const hasNerdFont = NERD_FONT_PATTERNS.some(pattern => 
+      output.toLowerCase().includes(pattern.toLowerCase())
+    );
+    
+    return hasNerdFont;
+  } catch (e) {
+    return false;
+  }
+}
+
+// 通过系统字体检测 Nerd Font
+function detectNerdFontViaSystem() {
+  if (process.platform === 'win32') {
+    return detectNerdFontWindows();
+  } else {
+    return detectNerdFontUnix();
+  }
+}
+
 function hasNerdFont() {
   // 如果用户明确设置了环境变量，优先使用
-  if (process.env.NERD_FONT === '1') return true;
-  if (process.env.NERD_FONT === '0') return false;
-  
-  const termProgram = process.env.TERM_PROGRAM || '';
-  const term = process.env.TERM || '';
-  
-  // 已知的支持 Nerd Font 的终端
-  const knownNerdTerminals = [
-    'Windows Terminal',
-    'iTerm',
-    'kitty',
-    'alacritty',
-    'Alacritty',
-    'WezTerm',
-    'wezterm',
-    'mintty',  // Git Bash
-    'MINGW',
-    'MSYS'
-  ];
-  
-  if (knownNerdTerminals.some(t => termProgram.includes(t) || term.includes(t))) {
+  if (process.env.NERD_FONT === '1') {
     return true;
   }
-  
-  // 检查终端特定的环境变量
-  if (process.env.KITTY_WINDOW_ID) return true;
-  if (process.env.WEZTERM_PANE) return true;
-  if (process.env.ALACRITTY_SOCKET) return true;
-  if (process.env.VTE_VERSION) return true;
-  
-  // Windows 上的 PowerShell 和 Windows Terminal 通常支持
-  if (process.platform === 'win32') {
-    // 检查是否在 Windows Terminal 中
-    if (process.env.WT_SESSION) return true;
-    // 检查是否在 PowerShell 中
-    if (process.env.PSModulePath) return true;
-    // 默认在 Windows 上假设支持
-    return true;
+  if (process.env.NERD_FONT === '0') {
+    return false;
   }
   
-  return false;
+  // 尝试从缓存读取
+  const cached = getCachedFontStatus();
+  if (cached !== null) {
+    return cached;
+  }
+  
+  // 执行系统字体检测
+  const detected = detectNerdFontViaSystem();
+  
+  // 缓存结果
+  setCachedFontStatus(detected);
+  
+  return detected;
 }
 
 // Git 信息缓存
@@ -99,11 +180,8 @@ let gitInfoCache = null;
 let gitInfoCacheDir = null;
 
 function getGitInfo(directory) {
-  log(`getGitInfo called with directory: ${directory}`);
-  
   // 如果目录没变且缓存存在，直接返回缓存
   if (gitInfoCache && gitInfoCacheDir === directory) {
-    log(`Using cached Git info: ${gitInfoCache.branch} ${gitInfoCache.status || ''}`);
     return gitInfoCache;
   }
   
@@ -120,13 +198,9 @@ function getGitInfo(directory) {
         cwd: directory, encoding: 'utf8', timeout: 1000
       });
       status = porcelain.length === 0 ? '✓' : '●';
-      log(`Git status: ${porcelain.length === 0 ? 'clean' : 'dirty'}`);
     } catch (e) {
-      log(`Git status check failed: ${e.message}`);
       status = '';
     }
-    
-    log(`Git branch found: ${branch} ${status}`);
     
     // 更新缓存
     gitInfoCache = { branch, status };
@@ -134,7 +208,6 @@ function getGitInfo(directory) {
     
     return gitInfoCache;
   } catch (e) {
-    log(`Git command failed: ${e.message}`);
     return null;
   }
 }
@@ -229,8 +302,6 @@ function resolveContextUsedTokens(tokens) {
 }
 
 export function createOCometixLineHooks(ctx) {
-  log('createOCometixLineHooks called');
-  
   const sessionRuntimes = new Map();
   const MAX_SESSION_ENTRIES = 50;
   
@@ -307,7 +378,7 @@ export function createOCometixLineHooks(ctx) {
           runtime.lastCompletedUsage = completedUsage;
         }
       } catch (e) {
-        log(`event hook error: ${e.message}`);
+        // 错误静默处理
       }
     },
     
@@ -345,7 +416,6 @@ export function createOCometixLineHooks(ctx) {
         }
         
         if (usage === null) {
-          log(`No usage data found for message ${input.messageID}`);
           return;
         }
         
@@ -355,22 +425,16 @@ export function createOCometixLineHooks(ctx) {
           tokens: usage.tokens
         });
         
-        log(`Updating status line: ${statusLine}`);
-        
         // 替换或追加状态栏（如果已存在则替换，避免重复）
         output.text = appendOrReplaceStatusLine(output.text, statusLine);
       } catch (e) {
-        log(`experimental.text.complete error: ${e.message}`);
+        // 错误静默处理
       }
     }
   };
 }
 
 export const OCometixLinePlugin = async (ctx) => {
-  log(`OCometixLinePlugin initialized`);
-  log(`ctx keys: ${Object.keys(ctx || {}).join(', ')}`);
-  log(`ctx.client exists: ${!!ctx.client}`);
-  log(`ctx.directory: ${ctx.directory}`);
   return createOCometixLineHooks(ctx);
 };
 
