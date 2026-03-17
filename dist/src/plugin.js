@@ -1,24 +1,8 @@
 // OCometixLine - OpenCode Custom Statusline Plugin
 import { execSync } from 'child_process';
-import { existsSync, readFileSync, writeFileSync, appendFileSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync } from 'fs';
 import { homedir } from 'os';
 import path from 'path';
-
-const DEBUG_FILE = path.join(homedir(), '.ocometixline', 'debug.log');
-const DEBUG_ENABLED = true;
-
-function debugLog(...args) {
-  if (!DEBUG_ENABLED) return;
-  try {
-    const cacheDir = path.dirname(DEBUG_FILE);
-    if (!existsSync(cacheDir)) {
-      execSync(`mkdir -p "${cacheDir}"`, { windowsHide: true });
-    }
-    const timestamp = new Date().toISOString();
-    const line = `[${timestamp}] ${args.join(' ')}\n`;
-    appendFileSync(DEBUG_FILE, line);
-  } catch (e) {}
-}
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -415,46 +399,25 @@ export function createOCometixLineHooks(ctx) {
           return;
         }
         
-        debugLog('[event] ========== message.updated ==========');
-        debugLog('[event] message.id=', message.id);
-        debugLog('[event] message.time?.completed=', message.time?.completed, 'type=', typeof message.time?.completed);
-        debugLog('[event] message.tokens=', JSON.stringify(message.tokens));
-        debugLog('[event] message.modelID=', message.modelID);
-        
         const sessionKey = toSessionKey(message.sessionID);
         const runtime = getOrCreateRuntime(sessionKey);
         
-        // 本条消息的 token 用量
         const messageInput = asFiniteNumber(message.tokens?.input ?? 0);
         const messageOutput = asFiniteNumber(message.tokens?.output ?? 0);
         const messageReasoning = asFiniteNumber(message.tokens?.reasoning ?? 0);
         
-        // 上下文：只计算 input + output（用于显示本条）
         const contextUsedTokens = messageInput + messageOutput;
-        
-        debugLog('[event] contextUsedTokens=', contextUsedTokens, '(input=', messageInput, '+ output=', messageOutput, ')');
-        
-        // Token消耗：计算本条的总消耗（input + output + reasoning）
         const messageConsumption = messageInput + messageOutput + messageReasoning;
         
-        // 【调整时序】先检查是否完成且 token 已计算
         const isCompleted = typeof message.time?.completed === 'number';
         const hasTokens = contextUsedTokens > 0;
-        debugLog('[event] 条件检查: isCompleted=', isCompleted, ', hasTokens=', hasTokens);
         
-        if (!isCompleted) {
-          debugLog('[event] 跳过: 消息未完成');
-          return;  // 未完成，不存储
-        }
-        
-        if (!hasTokens) {
-          debugLog('[event] 跳过: token 为 0');
-          return;  // token 未计算，不存储
+        if (!isCompleted || !hasTokens) {
+          return;
         }
         
         const contextLimitTokens = Math.max(resolveModelContextLimit(message.modelID), contextUsedTokens);
         
-        // 【调整时序】此时才存储（确保数据正确）
         runtime.usageByMessageID.set(message.id, {
           modelID: message.modelID,
           contextUsedTokens,
@@ -466,79 +429,54 @@ export function createOCometixLineHooks(ctx) {
             reasoning: messageReasoning
           }
         });
-        debugLog('[event] 已存储到 usageByMessageID, key=', message.id);
         
-        // 检查是否已经处理过此完成消息（防重复）
         if (runtime.seenAssistantMessages.has(message.id)) {
-          debugLog('[event] 已处理过此消息，跳过后续逻辑');
           return;
         }
         runtime.seenAssistantMessages.add(message.id);
         
-        // 检查是否已经累加过（从磁盘读取 lastMessageID）
         const lastProcessedID = getLastMessageID(sessionKey);
         if (lastProcessedID !== message.id) {
-          // 累加到会话累计值
           runtime.cumulativeConsumption += messageConsumption;
-          // 保存到磁盘
           saveCumulativeConsumption(sessionKey, runtime.cumulativeConsumption, message.id);
-          debugLog('[event] 累加 messageConsumption=', messageConsumption, ', 总计=', runtime.cumulativeConsumption);
         }
         
-        // 【调整时序】设置 lastCompletedUsage（此时一定正确）
         const completedUsage = runtime.usageByMessageID.get(message.id);
         if (completedUsage && completedUsage.contextUsedTokens > 0) {
           runtime.lastCompletedUsage = completedUsage;
-          debugLog('[event] 设置 lastCompletedUsage, contextUsedTokens=', completedUsage.contextUsedTokens);
         }
-      } catch (e) {
-        debugLog('[event] ERROR:', e.message, e.stack);
-      }
+      } catch (e) {}
     },
     
     "experimental.text.complete": async (input, output) => {
       try {
-        debugLog('[text.complete] ========== text.complete ==========');
-        debugLog('[text.complete] input.messageID=', input.messageID);
-        debugLog('[text.complete] input.sessionID=', input.sessionID);
-        
         const sessionKey = toSessionKey(input.sessionID);
         const runtime = getOrCreateRuntime(sessionKey);
         const messageID = input.messageID;
         
-        // 检查是否已经在 output 中追加过
         if (runtime.outputAugmentedMessages.has(messageID)) {
-          debugLog('[text.complete] 已追加过，跳过');
           return;
         }
         runtime.outputAugmentedMessages.add(messageID);
         
-        // 轮询等待当前消息完成，最多等待 3 秒
         const MAX_WAIT_MS = 3000;
         const POLL_INTERVAL_MS = 100;
         const maxAttempts = MAX_WAIT_MS / POLL_INTERVAL_MS;
         let usage = null;
         
-        debugLog('[text.complete] 开始轮询等待, messageID=', messageID, ', maxAttempts=', maxAttempts);
-        
         for (let attempt = 0; attempt < maxAttempts; attempt++) {
           usage = runtime.usageByMessageID.get(messageID);
           if (usage && usage.contextUsedTokens > 0) {
-            debugLog('[text.complete] 第', attempt + 1, '次轮询获取到数据, contextUsedTokens=', usage.contextUsedTokens);
             break;
           }
           await sleep(POLL_INTERVAL_MS);
         }
         
-        // 如果轮询后仍无数据，使用上一条消息的数据作为备选
         if (!usage || usage.contextUsedTokens === 0) {
-          debugLog('[text.complete] 轮询超时，无当前消息数据');
           usage = runtime.lastCompletedUsage;
-          debugLog('[text.complete] 使用 lastCompletedUsage 作为备选:', JSON.stringify(usage));
         }
         
         if (!usage || usage.contextUsedTokens === 0) {
-          debugLog('[text.complete] 无任何有效数据，跳过显示');
           return;
         }
         
@@ -547,12 +485,8 @@ export function createOCometixLineHooks(ctx) {
           tokens: usage.tokens
         }, runtime.cumulativeConsumption);
         
-        debugLog('[text.complete] 生成 statusLine=', statusLine);
-        
         output.text = appendOrReplaceStatusLine(output.text, statusLine);
-      } catch (e) {
-        debugLog('[text.complete] ERROR:', e.message, e.stack);
-      }
+      } catch (e) {}
     }
   };
 }

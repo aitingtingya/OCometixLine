@@ -4,7 +4,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
-## 这是一份Kimi-K2.5写的Readme
+## 这是一份 AI 写的 Readme
 ## Features
 
 - **🎯 智能字体检测** - 自动检测系统是否安装 Nerd Font，智能切换图标显示
@@ -70,22 +70,99 @@ rm ~/.ocometixline/font-cache.json
 
 ## HUD 显示格式
 
+状态栏分为四个栏目：**目录** | **Git** | **上下文** | **Token消耗**
+
 ### 格式一：Nerd Font 模式
 当系统检测到安装 Nerd Font 时显示：
 ```
- ~/.config/opencode/node_modules/OCometixLine |  master ✓ | ⚡ 45%-92K/256K
+📁 ~/.config/opencode/node_modules/OCometixLine | 📍 master ✓ | ⚡ 45%-92K/256K | 📊 519K
 ```
 
 ### 格式二：Emoji 模式
 未检测到 Nerd Font 时自动回退：
 ```
-📁 ~/.config/opencode/node_modules/OCometixLine | 📍 master ✓ | ⚡ 45%-92K/256K
+📁 ~/.config/opencode/node_modules/OCometixLine | 📍 master ✓ | ⚡ 45%-92K/256K | 📊 519K
 ```
 
-### 显示内容说明
-- **📁/ 目录** - 当前工作目录（自动简化为 `~`）
-- **📍/ Git** - 分支名称 + 状态指示符（✓ 干净 / ● 有修改）
-- **⚡ Token** - 上下文使用百分比、当前使用量/限制（如 `45%-92K/256K`）
+### 栏目说明
+
+| 栏目 | 图标 | 说明 | 示例 |
+|------|------|------|------|
+| 目录 | 📁 | 当前工作目录（自动简化为 `~`） | `~/project` |
+| Git | 📍 | 分支名称 + 状态（✓ 干净 / ● 有修改） | `master ✓` |
+| 上下文 | ⚡ | 使用百分比-当前使用量/限制 | `45%-92K/256K` |
+| Token消耗 | 📊 | 会话累计消耗（input + output + reasoning） | `519K` |
+
+### 上下文 vs Token消耗
+
+- **上下文栏目**：显示上一条已完成消息的 `input + output`（不含 reasoning），用于了解当前上下文使用情况
+- **Token消耗栏目**：显示当前会话的累计总消耗，包含 `input + output + reasoning`
+
+## 安装 Nerd Font（推荐）
+
+为了获得最佳图标显示效果，建议安装 Nerd Font。
+
+### Windows
+
+1. 访问 [Nerd Fonts 下载页](https://www.nerdfonts.com/font-downloads)
+2. 下载喜欢的字体（推荐：CaskaydiaCove、JetBrainsMono、FiraCode、Hack）
+3. 解压后右键字体文件 → 安装
+4. 在终端设置中选择已安装的 Nerd Font
+
+**PowerShell 一键安装**（需要管理员权限）：
+```powershell
+# 安装 Cascadia Code Nerd Font
+winget install Microsoft.CascadiaCode
+```
+
+### macOS
+
+```bash
+# 使用 Homebrew 安装
+brew install --cask font-hack-nerd-font
+
+# 其他推荐字体
+brew install --cask font-jetbrains-mono-nerd-font
+brew install --cask font-fira-code-nerd-font
+brew install --cask font-caskaydia-cove-nerd-font
+```
+
+### Linux
+
+```bash
+# Ubuntu/Debian
+sudo apt install fonts-hack-nerd-font
+
+# Arch Linux
+sudo pacman -S ttf-hack-nerd
+
+# Fedora
+sudo dnf install hack-fonts
+```
+
+**手动安装**：
+```bash
+mkdir -p ~/.local/share/fonts
+cd ~/.local/share/fonts
+# 下载 Hack Nerd Font（可替换为其他字体）
+wget https://github.com/ryanoasis/nerd-fonts/releases/download/v3.3.0/Hack.zip
+unzip Hack.zip && rm Hack.zip
+fc-cache -fv
+```
+
+### 验证安装
+
+安装 Nerd Font 后，需要在终端设置中将字体切换为已安装的 Nerd Font。
+
+清除插件缓存后重启终端：
+```bash
+rm ~/.ocometixline/font-cache.json
+```
+
+或者强制启用 Nerd Font 图标：
+```bash
+export NERD_FONT=1
+```
 
 ## Supported Models
 
